@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -47,8 +48,10 @@ class SecurityAndLifecycleTest {
     void passwordChangeInvalidatesExistingJwt() {
         JwtService jwt = new JwtService();
         ReflectionTestUtils.setField(jwt, "secret", "test-only-signing-secret-at-least-32-bytes");
+        ReflectionTestUtils.setField(jwt, "expirationMinutes", 10L);
         AppUser user = user(14L, Role.CUSTOMER);
         String oldToken = jwt.createToken(user);
+        assertTrue(jwt.isValid(oldToken, user));
 
         user.setPasswordHash("replacement-hash");
 

@@ -304,6 +304,7 @@ class CoreWorkflowServiceTest {
         ClaimRepository claims = mock(ClaimRepository.class);
         ClaimDocumentRepository documents = mock(ClaimDocumentRepository.class);
         Claim claim = mock(Claim.class);
+        when(claim.getId()).thenReturn(10L);
         ReflectionTestUtils.setField(claim, "id", 10L);
         when(claim.getCustomer()).thenReturn(user(6L, Role.CUSTOMER));
         ClaimDocument document = new ClaimDocument(claim, user(6L, Role.CUSTOMER), "evidence.pdf",
@@ -326,6 +327,7 @@ class CoreWorkflowServiceTest {
         DocumentScanner scanner = mock(DocumentScanner.class);
         AppUser customer = user(6L, Role.CUSTOMER);
         Claim claim = mock(Claim.class);
+        when(claim.getId()).thenReturn(10L);
         ReflectionTestUtils.setField(claim, "id", 10L);
         when(claim.getCustomer()).thenReturn(customer);
         when(claim.getStatus()).thenReturn(com.smartinsurance.enums.ClaimStatus.SUBMITTED);
