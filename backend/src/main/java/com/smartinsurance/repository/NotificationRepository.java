@@ -5,6 +5,6 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
-    List<Notification> findTop100ByUserIdOrderByCreatedAtDesc(Long userId);
-    long countByUserIdAndReadFalse(Long userId);
+    List<Notification> findTop100ByUser_IdOrderByCreatedAtDesc(Long userId);
+    long countByUser_IdAndReadFalse(Long userId);
 }

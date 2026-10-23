@@ -37,12 +37,12 @@ public class NotificationService {
     }
     @Transactional(readOnly = true)
     public List<NotificationResponse> list(AppUser user) {
-        return notifications.findTop100ByUserIdOrderByCreatedAtDesc(user.getId()).stream()
+        return notifications.findTop100ByUser_IdOrderByCreatedAtDesc(user.getId()).stream()
                 .map(n -> new NotificationResponse(n.getId(), n.getEventType(), n.getMessage(),
                         n.getClaim() == null ? null : n.getClaim().getId(), n.isRead(), n.getCreatedAt())).toList();
     }
     @Transactional(readOnly = true)
-    public long unread(AppUser user) { return notifications.countByUserIdAndReadFalse(user.getId()); }
+    public long unread(AppUser user) { return notifications.countByUser_IdAndReadFalse(user.getId()); }
     @Transactional
     public void markRead(AppUser user, Long id) {
         Notification notification = notifications.findById(id)
