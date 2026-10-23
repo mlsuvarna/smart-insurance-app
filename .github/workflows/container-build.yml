@@ -1,0 +1,21 @@
+name: Container build
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - backend/**
+      - frontend/**
+      - docker-compose.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t smart-insurance-api:${{ github.sha }} ./backend
+      - name: Build frontend image
+        run: docker build --build-arg VITE_API_BASE_URL=https://api.example.invalid/api/v1 -t smart-insurance-web:${{ github.sha }} ./frontend

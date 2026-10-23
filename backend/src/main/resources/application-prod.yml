@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+  scanner:
+    mode: ${SCANNER_MODE:clamav}
+  storage:
+    mode: ${STORAGE_MODE:s3}
+logging:
+  level:
+    root: INFO

@@ -1,0 +1,9 @@
+terraform {
+  backend "s3" {
+    bucket         = "replace-with-private-terraform-state-bucket"
+    key            = "smart-insurance/dev/terraform.tfstate"
+    region         = "ap-south-1"
+    dynamodb_table = "replace-with-state-lock-table"
+    encrypt        = true
+  }
+}
