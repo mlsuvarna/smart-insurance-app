@@ -1,6 +1,7 @@
 package com.smartinsurance.controller;
 
 import com.smartinsurance.entity.ClaimType;
+import com.smartinsurance.entity.ClaimQueue;
 import com.smartinsurance.entity.InsuranceProduct;
 import com.smartinsurance.exception.ResourceNotFoundException;
 import com.smartinsurance.repository.ClaimTypeRepository;

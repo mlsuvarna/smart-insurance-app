@@ -1,6 +1,7 @@
 package com.smartinsurance.entity;
 
 import com.smartinsurance.enums.DocumentScanStatus;
+import com.smartinsurance.service.DocumentScanner;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
