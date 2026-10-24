@@ -8,20 +8,20 @@ export default function AdminPaymentsPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   async function load() {
-    const { data } = await client.get('/payments/admin', { params: { page, size: 20 } });
+    const { data } = await client.get('/admin/payments', { params: { page, size: 20 } });
     setPayments(data.content || []);
     setHasNext(!data.last);
   }
   useEffect(() => { load().catch((e) => setError(e.response?.data?.message || 'Unable to load payment records.')); }, [page]);
   async function process(reference, outcome) {
     try {
-      await client.post(`/payments/admin/${encodeURIComponent(reference)}/mock-processing`, null, { params: { outcome } });
+      await client.post(`/admin/payments/${encodeURIComponent(reference)}/mock-processing`, null, { params: { outcome } });
       await load(); setMessage(`Mock processor recorded ${outcome}.`); setError('');
     } catch (e) { setError(e.response?.data?.message || 'Payment processing failed.'); }
   }
   async function refund(reference) {
     try {
-      await client.post(`/payments/admin/${encodeURIComponent(reference)}/refund`);
+      await client.post(`/admin/payments/${encodeURIComponent(reference)}/refund`);
       await load(); setMessage('Mock refund recorded.'); setError('');
     } catch (e) { setError(e.response?.data?.message || 'Payment refund failed.'); }
   }
