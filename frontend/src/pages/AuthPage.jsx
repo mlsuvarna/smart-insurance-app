@@ -31,7 +31,7 @@ export default function AuthPage({ mode }) {
         <div className="auth-form-wrap">
           <NavBrand />
           <h2>{registering ? 'Create your account' : 'Welcome back'}</h2>
-          <p className="muted">{registering ? 'Get started with your Northstar account.' : 'Sign in to continue to your insurance workspace.'}</p>
+          <p className="muted">{registering ? 'Get started with your Smart Claim account.' : 'Sign in to continue to your insurance workspace.'}</p>
           <form className="form-stack" onSubmit={submit}>
             {registering && <label>Full name<input name="fullName" autoComplete="name" required maxLength="160" /></label>}
             <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
@@ -39,11 +39,11 @@ export default function AuthPage({ mode }) {
             {error && <p className="error" role="alert">{error}</p>}
             <button className="button button-primary button-wide" disabled={busy}>{busy ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}</button>
           </form>
-          <p className="auth-switch">{registering ? 'Already registered?' : 'New to Northstar?'} <Link to={registering ? '/login' : '/register'}>{registering ? 'Sign in' : 'Create an account'}</Link></p>
+          <p className="auth-switch">{registering ? 'Already registered?' : 'New to Smart Claim?'} <Link to={registering ? '/login' : '/register'}>{registering ? 'Sign in' : 'Create an account'}</Link></p>
         </div>
       </section>
     </main>
   );
 }
 
-function NavBrand() { return <div className="brand auth-brand"><span className="brand-mark">N</span><span>Northstar <small>INSURANCE</small></span></div>; }
+function NavBrand() { return <div className="brand auth-brand"><span className="brand-mark">SC</span><span>Smart Claim</span></div>; }

@@ -15,7 +15,7 @@ import { AdminAssignmentsPage, AdminAuditPage, AdminClaimTypesPage, AdminKycPage
 import AdminQueuesPage from './pages/AdminQueuesPage';
 import AdminPaymentsPage from './pages/AdminPaymentsPage';
 
-function NotFound({ title = 'Page not found' }) { return <section className="panel"><span className="eyebrow">NORTHSTAR INSURANCE</span><h1>{title}</h1><p className="muted">This page is not available for your account.</p><a href="/">Return to dashboard</a></section>; }
+function NotFound({ title = 'Page not found' }) { return <section className="panel"><span className="eyebrow">SMART CLAIM</span><h1>{title}</h1><p className="muted">This page is not available for your account.</p><a href="/">Return to dashboard</a></section>; }
 
 export default function App() {
   return <Routes>

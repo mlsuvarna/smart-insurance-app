@@ -11,7 +11,7 @@ export default function AppLayout() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <NavLink className="brand" to="/"><span className="brand-mark">N</span><span>Northstar <small>INSURANCE</small></span></NavLink>
+        <NavLink className="brand" to="/"><span className="brand-mark">SC</span><span>Smart Claim</span></NavLink>
         <nav aria-label="Main navigation" className="main-nav">
           {isCustomer && <><NavLink to="/">Overview</NavLink><NavLink to="/policies">Policies</NavLink><NavLink to="/claims">Claims</NavLink><NavLink to="/payments">Payments</NavLink></>}
           {user?.role === 'AGENT' && <><NavLink to="/">Overview</NavLink><NavLink to="/agent">Customers</NavLink><NavLink to="/claims">Claims</NavLink></>}
@@ -23,7 +23,7 @@ export default function AppLayout() {
         <div className="account"><span>{user?.fullName} <small>{user?.role?.replace('_', ' ')}</small></span><button className="button button-quiet" onClick={signOut}>Sign out</button></div>
       </header>
       <main className="content"><Outlet /></main>
-      <footer className="footer">Northstar Insurance · Secure claims workspace</footer>
+      <footer className="footer">Smart Claim · Secure claims workspace</footer>
     </div>
   );
 }
