@@ -1,9 +1,11 @@
 package com.smartinsurance.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,6 +42,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -157,6 +160,46 @@ class ClaimSecurityLifecycleMySqlTest {
         assertThrows(AccessDeniedException.class, () -> claims.get(fixture.officer(), submitted.id()));
         assertThrows(com.smartinsurance.exception.BusinessRuleException.class,
                 () -> documentService.download(fixture.customer(), submitted.id(), document.getId()));
+    }
+
+    @Test
+    @Transactional
+    void officersSeeUnassignedClaimsOnlyInTheirActiveQueue() {
+        Fixture fixture = fixture();
+        AppUser autoOfficer = saveUser("auto-officer-" + UUID.randomUUID().toString().substring(0, 8),
+                Role.CLAIMS_OFFICER);
+        ClaimQueue autoQueue = queues.saveAndFlush(new ClaimQueue(
+                "AUTO-" + UUID.randomUUID().toString().substring(0, 8), "Auto claims"));
+        memberships.saveAndFlush(new OfficerQueueMembership(fixture.queue(), fixture.officer(), fixture.admin()));
+        memberships.saveAndFlush(new OfficerQueueMembership(autoQueue, autoOfficer, fixture.admin()));
+        claimTypes.saveAndFlush(new ClaimType(fixture.policy().getProduct(), autoQueue, "AUTO"));
+
+        var generalClaim = claims.submit(fixture.customer(), new SubmitRequest(fixture.policy().getId(), "HOME",
+                LocalDate.now(), "General queue incident", new BigDecimal("100.00")));
+        var autoClaim = claims.submit(fixture.customer(), new SubmitRequest(fixture.policy().getId(), "AUTO",
+                LocalDate.now(), "Auto queue incident", new BigDecimal("100.00")));
+
+        var generalQueue = claims.listOfficer(fixture.officer(), null, null, null,
+                false, false, false, PageRequest.of(0, 20));
+        var autoOfficerQueue = claims.listOfficer(autoOfficer, null, null, null,
+                false, false, false, PageRequest.of(0, 20));
+
+        assertEquals("GENERAL", generalClaim.queueCode());
+        assertTrue(generalQueue.getContent().stream().anyMatch(claim -> claim.id().equals(generalClaim.id())));
+        assertFalse(generalQueue.getContent().stream().anyMatch(claim -> claim.id().equals(autoClaim.id())));
+        assertTrue(autoOfficerQueue.getContent().stream().anyMatch(claim -> claim.id().equals(autoClaim.id())));
+        assertFalse(autoOfficerQueue.getContent().stream().anyMatch(claim -> claim.id().equals(generalClaim.id())));
+        assertEquals(0, claims.listOfficer(fixture.officer(), null, null, null,
+                true, false, false, PageRequest.of(0, 1)).getTotalElements());
+        assertEquals(1, claims.listOfficer(fixture.officer(), null, null, null,
+                false, true, false, PageRequest.of(0, 1)).getTotalElements());
+
+        claims.startReview(fixture.officer(), generalClaim.id());
+        assertEquals(1, claims.listOfficer(fixture.officer(), null, null, null,
+                true, false, false, PageRequest.of(0, 1)).getTotalElements());
+        claims.requestInformation(fixture.officer(), generalClaim.id(), new ActionRequest("Additional evidence", null));
+        assertEquals(1, claims.listOfficer(fixture.officer(), null, null, null,
+                false, false, true, PageRequest.of(0, 1)).getTotalElements());
     }
 
     @Test

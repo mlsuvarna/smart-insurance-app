@@ -39,7 +39,7 @@ class MySqlMigrationIntegrationTest {
         Integer successfulMigrations = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
 
-        assertTrue(successfulMigrations != null && successfulMigrations >= 10);
+        assertTrue(successfulMigrations != null && successfulMigrations >= 11);
         assertTrue(queues.findByCodeIgnoreCase("GENERAL").isPresent());
         assertTrue(columnExists("claims", "queue_id"));
         assertTrue(columnExists("payments", "processed_at"));

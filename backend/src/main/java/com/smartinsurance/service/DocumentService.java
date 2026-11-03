@@ -128,10 +128,12 @@ public class DocumentService {
         if (actor.getRole() == Role.ADMIN || claim.getCustomer().getId().equals(actor.getId())) return;
         if (actor.getRole() == Role.AGENT && assignments.existsByAgentIdAndCustomerId(actor.getId(), claim.getCustomer().getId())) return;
         if (actor.getRole() == Role.CLAIMS_OFFICER && claim.getAssignedOfficer() != null
-                && claim.getAssignedOfficer().getId().equals(actor.getId())) return;
+                && claim.getAssignedOfficer().getId().equals(actor.getId())
+                && queueMemberships.existsActiveMembership(actor.getId(), claim.getQueue().getId())) return;
         if (actor.getRole() == Role.CLAIMS_OFFICER && claim.getAssignedOfficer() == null
-                && claim.getStatus() == ClaimStatus.SUBMITTED
-                && queueMemberships.existsByOfficerIdAndQueueId(actor.getId(), claim.getQueue().getId())) return;
+                && List.of(ClaimStatus.SUBMITTED, ClaimStatus.UNDER_REVIEW, ClaimStatus.INFO_REQUESTED,
+                        ClaimStatus.APPROVED).contains(claim.getStatus())
+                && queueMemberships.existsActiveMembership(actor.getId(), claim.getQueue().getId())) return;
         throw new AccessDeniedException("You cannot access this claim's documents");
     }
 

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentCaptor.forClass;
 
 import com.smartinsurance.dto.ClaimDtos.ActionRequest;
@@ -19,9 +20,11 @@ import com.smartinsurance.entity.Claim;
 import com.smartinsurance.entity.ClaimHistory;
 import com.smartinsurance.entity.ClaimReview;
 import com.smartinsurance.entity.ClaimQueue;
+import com.smartinsurance.entity.ClaimType;
 import com.smartinsurance.entity.InsuranceProduct;
 import com.smartinsurance.entity.Policy;
 import com.smartinsurance.enums.ClaimStatus;
+import com.smartinsurance.enums.PolicyStatus;
 import com.smartinsurance.enums.Role;
 import com.smartinsurance.exception.BusinessRuleException;
 import com.smartinsurance.repository.AssignmentRepository;
@@ -31,6 +34,7 @@ import com.smartinsurance.repository.ClaimRepository;
 import com.smartinsurance.repository.ClaimReviewRepository;
 import com.smartinsurance.repository.ClaimSettlementRepository;
 import com.smartinsurance.repository.ClaimTypeRepository;
+import com.smartinsurance.repository.ClaimQueueRepository;
 import com.smartinsurance.repository.OfficerQueueMembershipRepository;
 import com.smartinsurance.repository.PolicyRepository;
 import com.smartinsurance.repository.UserRepository;
@@ -44,6 +48,36 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class SecurityAndLifecycleTest {
+    @Test
+    void submittedClaimUsesGeneralQueueWhenClaimTypeHasNoQueue() {
+        AppUser customer = user(3L, Role.CUSTOMER);
+        InsuranceProduct product = new InsuranceProduct("Home", "HOME", "Coverage",
+                BigDecimal.TEN, BigDecimal.TEN);
+        Policy policy = new Policy("POL-1", customer, product, LocalDate.now().minusDays(1),
+                LocalDate.now().plusYears(1));
+        policy.setStatus(PolicyStatus.ACTIVE);
+        ClaimQueue general = new ClaimQueue("GENERAL", "General");
+        ClaimRepository claims = mock(ClaimRepository.class);
+        ClaimTypeRepository types = mock(ClaimTypeRepository.class);
+        ClaimQueueRepository queues = mock(ClaimQueueRepository.class);
+        PolicyRepository policies = mock(PolicyRepository.class);
+        when(policies.findById(1L)).thenReturn(Optional.of(policy));
+        when(types.findByProductIdAndNameIgnoreCaseAndActiveTrue(product.getId(), "HOME"))
+                .thenReturn(Optional.of(new ClaimType(product, null, "HOME")));
+        when(queues.findByCodeIgnoreCase("GENERAL")).thenReturn(Optional.of(general));
+        when(claims.save(any(Claim.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        ClaimService service = new ClaimService(claims, mock(ClaimHistoryRepository.class), policies,
+                mock(AssignmentRepository.class), mock(NotificationService.class), mock(SlaService.class),
+                types, queues, new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
+                mock(UserRepository.class), mock(ClaimReviewRepository.class), mock(ClaimSettlementRepository.class),
+                mock(OfficerQueueMembershipRepository.class), mock(AuditLogService.class));
+
+        var submitted = service.submit(customer, new com.smartinsurance.dto.ClaimDtos.SubmitRequest(
+                1L, "HOME", LocalDate.now(), "Incident", BigDecimal.ONE));
+
+        assertEquals("GENERAL", submitted.queueCode());
+    }
+
     @Test
     void passwordChangeInvalidatesExistingJwt() {
         JwtService jwt = new JwtService();
@@ -85,7 +119,8 @@ class SecurityAndLifecycleTest {
         when(claims.findByIdForUpdate(22L)).thenReturn(Optional.of(claim));
         ClaimService service = new ClaimService(claims, history, mock(PolicyRepository.class),
                 mock(AssignmentRepository.class), mock(NotificationService.class), mock(SlaService.class),
-                mock(ClaimTypeRepository.class), new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
+                mock(ClaimTypeRepository.class), mock(ClaimQueueRepository.class),
+                new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
                 mock(UserRepository.class), mock(ClaimReviewRepository.class), mock(ClaimSettlementRepository.class),
                 mock(OfficerQueueMembershipRepository.class), mock(AuditLogService.class));
 
@@ -105,13 +140,22 @@ class SecurityAndLifecycleTest {
     void rejectionRequiresAReasonBeforeReviewIsChanged() {
         ClaimRepository claims = mock(ClaimRepository.class);
         ClaimReviewRepository reviews = mock(ClaimReviewRepository.class);
+        OfficerQueueMembershipRepository memberships = mock(OfficerQueueMembershipRepository.class);
         AppUser officer = user(5L, Role.CLAIMS_OFFICER);
+        ClaimQueue queue = new ClaimQueue("GENERAL", "General");
+        ReflectionTestUtils.setField(queue, "id", 1L);
         Claim claim = mock(Claim.class);
         when(claim.getCustomer()).thenReturn(user(3L, Role.CUSTOMER));
         when(claim.getAssignedOfficer()).thenReturn(officer);
+        when(claim.getQueue()).thenReturn(queue);
         when(claim.getStatus()).thenReturn(ClaimStatus.UNDER_REVIEW);
         when(claims.findByIdForUpdate(22L)).thenReturn(Optional.of(claim));
-        ClaimService service = claimService(claims, reviews);
+        when(memberships.existsActiveMembership(5L, 1L)).thenReturn(true);
+        ClaimService service = new ClaimService(claims, mock(ClaimHistoryRepository.class),
+                mock(PolicyRepository.class), mock(AssignmentRepository.class), mock(NotificationService.class),
+                mock(SlaService.class), mock(ClaimTypeRepository.class), mock(ClaimQueueRepository.class),
+                new ClaimTransitionValidator(), mock(ClaimCommentRepository.class), mock(UserRepository.class),
+                reviews, mock(ClaimSettlementRepository.class), memberships, mock(AuditLogService.class));
 
         assertThrows(BusinessRuleException.class,
                 () -> service.reject(officer, 22L, new ActionRequest("  ", null)));
@@ -134,13 +178,16 @@ class SecurityAndLifecycleTest {
         ClaimRepository claims = mock(ClaimRepository.class);
         ClaimReviewRepository reviews = mock(ClaimReviewRepository.class);
         ClaimHistoryRepository history = mock(ClaimHistoryRepository.class);
+        OfficerQueueMembershipRepository memberships = mock(OfficerQueueMembershipRepository.class);
         when(claims.findByIdForUpdate(22L)).thenReturn(Optional.of(claim));
+        when(memberships.existsActiveMembership(5L, null)).thenReturn(true);
         when(reviews.findFirstByClaimIdAndClosedAtIsNullOrderByCreatedAtDesc(22L)).thenReturn(Optional.of(review));
         ClaimService service = new ClaimService(claims, history, mock(PolicyRepository.class),
                 mock(AssignmentRepository.class), mock(NotificationService.class), mock(SlaService.class),
-                mock(ClaimTypeRepository.class), new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
+                mock(ClaimTypeRepository.class), mock(ClaimQueueRepository.class),
+                new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
                 mock(UserRepository.class), reviews, mock(ClaimSettlementRepository.class),
-                mock(OfficerQueueMembershipRepository.class), mock(AuditLogService.class));
+                memberships, mock(AuditLogService.class));
 
         var response = service.reject(officer, 22L, new ActionRequest("Incident is outside coverage", null));
 
@@ -175,7 +222,8 @@ class SecurityAndLifecycleTest {
                 .thenReturn(Optional.of(mock(com.smartinsurance.entity.ClaimReview.class)));
         ClaimService service = new ClaimService(claims, mock(ClaimHistoryRepository.class), mock(PolicyRepository.class),
                 mock(AssignmentRepository.class), notifications, mock(SlaService.class),
-                mock(ClaimTypeRepository.class), new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
+                mock(ClaimTypeRepository.class), mock(ClaimQueueRepository.class),
+                new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
                 mock(UserRepository.class), reviews, mock(ClaimSettlementRepository.class),
                 mock(OfficerQueueMembershipRepository.class), mock(AuditLogService.class));
 
@@ -229,10 +277,11 @@ class SecurityAndLifecycleTest {
         when(claims.findByIdForUpdate(22L)).thenReturn(Optional.of(claim));
         when(users.findById(5L)).thenReturn(Optional.of(oldOfficer));
         when(users.findById(6L)).thenReturn(Optional.of(newOfficer));
-        when(memberships.existsByOfficerIdAndQueueId(6L, 4L)).thenReturn(true);
+        when(memberships.existsActiveMembership(6L, 4L)).thenReturn(true);
         ClaimService service = new ClaimService(claims, history, mock(PolicyRepository.class),
                 mock(AssignmentRepository.class), notifications, mock(SlaService.class),
-                mock(ClaimTypeRepository.class), new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
+                mock(ClaimTypeRepository.class), mock(ClaimQueueRepository.class),
+                new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
                 users, mock(ClaimReviewRepository.class), mock(ClaimSettlementRepository.class), memberships,
                 mock(AuditLogService.class));
 
@@ -275,7 +324,8 @@ class SecurityAndLifecycleTest {
     private static ClaimService claimService(ClaimRepository claims, ClaimReviewRepository reviews) {
         return new ClaimService(claims, mock(ClaimHistoryRepository.class), mock(PolicyRepository.class),
                 mock(AssignmentRepository.class), mock(NotificationService.class), mock(SlaService.class),
-                mock(ClaimTypeRepository.class), new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
+                mock(ClaimTypeRepository.class), mock(ClaimQueueRepository.class),
+                new ClaimTransitionValidator(), mock(ClaimCommentRepository.class),
                 mock(UserRepository.class), reviews, mock(ClaimSettlementRepository.class),
                 mock(OfficerQueueMembershipRepository.class), mock(AuditLogService.class));
     }

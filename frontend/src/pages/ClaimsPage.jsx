@@ -14,6 +14,7 @@ export default function ClaimsPage() {
   const [queues, setQueues] = useState([]);
   const [queueCode, setQueueCode] = useState('');
   const [error, setError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     if (user?.role === 'CLAIMS_OFFICER' || user?.role === 'ADMIN') {
       client.get('/claims/queues').then(({ data }) => setQueues(data))
@@ -30,12 +31,22 @@ export default function ClaimsPage() {
     client.get(user?.role === 'CUSTOMER' ? '/claims' : user?.role === 'AGENT' ? '/agent/claims' : '/claims/queue', { params })
       .then(({ data }) => { setClaims(data.content || []); setHasNext(!data.last); })
       .catch((failure) => setError(failure.response?.data?.message || 'Unable to load claims.'));
-  }, [user, page, status, overdue, queueCode]);
+  }, [user, page, status, overdue, queueCode, refreshKey]);
+
+  async function startReview(claim) {
+    setError('');
+    try {
+      await client.post(`/claims/${claim.id}/review`);
+      setRefreshKey((value) => value + 1);
+    } catch (failure) {
+      setError(failure.response?.data?.message || 'Unable to take this claim for review.');
+    }
+  }
   return <>
     <section className="welcome-row"><div><span className="eyebrow">CLAIM MANAGEMENT</span><h1>{user?.role === 'CUSTOMER' ? 'Your claims' : 'Claim queue'}</h1><p className="muted">Track status, review documents and follow the case timeline.</p></div>{user?.role === 'CUSTOMER' && <Link to="/claims/new" className="button button-primary">Submit a claim</Link>}</section>
     {error && <p className="error" role="alert">{error}</p>}
     {(user?.role === 'CLAIMS_OFFICER' || user?.role === 'ADMIN') && <section className="panel form-row"><label>Queue<select value={queueCode} onChange={(e) => { setPage(0); setQueueCode(e.target.value); }}><option value="">All permitted queues</option>{queues.map((queue) => <option key={queue.code} value={queue.code}>{queue.name} ({queue.code})</option>)}</select></label><label>Status filter<select value={status} onChange={(e) => { setPage(0); setStatus(e.target.value); }}><option value="">All permitted statuses</option>{['SUBMITTED','UNDER_REVIEW','INFO_REQUESTED','APPROVED','REJECTED','SETTLED','WITHDRAWN'].map((value) => <option key={value}>{value}</option>)}</select></label><label>SLA filter<select value={overdue} onChange={(e) => { setPage(0); setOverdue(e.target.value); }}><option value="">All</option><option value="true">Overdue</option><option value="false">Not overdue / paused / closed</option></select></label></section>}
-    <section className="panel">{claims.length ? <ClaimTable claims={claims} /> : <Empty title="No claims found" detail="Claims you can access will appear here." />}
+    <section className="panel">{claims.length ? <ClaimTable claims={claims} onStartReview={user?.role === 'CLAIMS_OFFICER' ? startReview : undefined} /> : <Empty title="No claims found" detail="Claims you can access will appear here." />}
       <div className="button-row pagination"><button className="button button-quiet" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous</button><span>Page {page + 1}</span><button className="button button-quiet" disabled={!hasNext} onClick={() => setPage((value) => value + 1)}>Next</button></div>
     </section>
   </>;

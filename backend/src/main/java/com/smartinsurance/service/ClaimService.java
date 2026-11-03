@@ -9,6 +9,7 @@ import com.smartinsurance.entity.Claim;
 import com.smartinsurance.entity.ClaimHistory;
 import com.smartinsurance.entity.ClaimReview;
 import com.smartinsurance.entity.ClaimSettlement;
+import com.smartinsurance.entity.ClaimQueue;
 import com.smartinsurance.entity.Policy;
 import com.smartinsurance.enums.ClaimStatus;
 import com.smartinsurance.enums.PolicyStatus;
@@ -23,6 +24,7 @@ import com.smartinsurance.repository.ClaimReviewRepository;
 import com.smartinsurance.repository.ClaimSettlementRepository;
 import com.smartinsurance.repository.OfficerQueueMembershipRepository;
 import com.smartinsurance.repository.ClaimTypeRepository;
+import com.smartinsurance.repository.ClaimQueueRepository;
 import com.smartinsurance.repository.PolicyRepository;
 import com.smartinsurance.repository.UserRepository;
 import java.math.BigDecimal;
@@ -46,6 +48,7 @@ public class ClaimService {
     private final NotificationService notifications;
     private final SlaService slas;
     private final ClaimTypeRepository claimTypes;
+    private final ClaimQueueRepository queues;
     private final ClaimTransitionValidator transitionValidator;
     private final ClaimCommentRepository comments;
     private final UserRepository users;
@@ -56,7 +59,8 @@ public class ClaimService {
 
     public ClaimService(ClaimRepository claims, ClaimHistoryRepository history, PolicyRepository policies,
                        AssignmentRepository assignments, NotificationService notifications, SlaService slas,
-                       ClaimTypeRepository claimTypes, ClaimTransitionValidator transitionValidator,
+                       ClaimTypeRepository claimTypes, ClaimQueueRepository queues,
+                       ClaimTransitionValidator transitionValidator,
                        ClaimCommentRepository comments, UserRepository users, ClaimReviewRepository reviews,
                        ClaimSettlementRepository settlements, OfficerQueueMembershipRepository queueMemberships,
                        AuditLogService audit) {
@@ -67,6 +71,7 @@ public class ClaimService {
         this.notifications = notifications;
         this.slas = slas;
         this.claimTypes = claimTypes;
+        this.queues = queues;
         this.transitionValidator = transitionValidator;
         this.comments = comments;
         this.users = users;
@@ -102,7 +107,12 @@ public class ClaimService {
         com.smartinsurance.entity.ClaimType claimType = claimTypes
                 .findByProductIdAndNameIgnoreCaseAndActiveTrue(policy.getProduct().getId(), request.claimType())
                 .orElseThrow(() -> new BusinessRuleException("Claim type is not available for the selected product"));
-        if (!claimType.getQueue().isActive()) throw new BusinessRuleException("Claim type is routed to an inactive queue");
+        ClaimQueue queue = claimType.getQueue();
+        if (queue == null) {
+            queue = queues.findByCodeIgnoreCase("GENERAL")
+                    .orElseThrow(() -> new ResourceNotFoundException("General claims queue not found"));
+        }
+        if (!queue.isActive()) throw new BusinessRuleException("Claim type is routed to an inactive queue");
         if (request.incidentDate().isAfter(today) || request.incidentDate().isBefore(policy.getStartDate())
                 || request.incidentDate().isAfter(policy.getEndDate())) {
             throw new BusinessRuleException("Incident date must fall within the active policy coverage period");
@@ -110,7 +120,6 @@ public class ClaimService {
         if (request.claimedAmount().compareTo(policy.getCoverageAmount()) > 0) {
             throw new BusinessRuleException("Claimed amount exceeds policy coverage");
         }
-        com.smartinsurance.entity.ClaimQueue queue = claimType.getQueue();
         String number = "CLM-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase();
         Claim claim = claims.save(new Claim(number, policy, queue, request.claimType().trim(), request.incidentDate(),
                 request.description().trim(), request.claimedAmount(),
@@ -127,6 +136,7 @@ public class ClaimService {
 
     @Transactional(readOnly = true)
     public Page<ClaimResponse> listOfficer(AppUser actor, String status, Boolean overdue, String queueCode,
+                                           boolean assignedOnly, boolean openOnly, boolean needsAttention,
                                            Pageable pageable) {
         if (actor.getRole() != Role.CLAIMS_OFFICER && actor.getRole() != Role.ADMIN) {
             throw new org.springframework.security.access.AccessDeniedException("Claims officer access required");
@@ -141,7 +151,8 @@ public class ClaimService {
         String normalizedQueue = queueCode == null ? null : queueCode.toUpperCase(java.util.Locale.ROOT);
         Page<Claim> queue = actor.getRole() == Role.ADMIN
                 ? claims.findAdminQueue(status, overdue, normalizedQueue, pageable)
-                : claims.findOfficerQueue(actor.getId(), status, overdue, normalizedQueue, pageable);
+                : claims.findOfficerQueue(actor.getId(), status, overdue, normalizedQueue, assignedOnly,
+                        openOnly, needsAttention, pageable);
         return queue.map(this::toResponse);
     }
 
@@ -269,7 +280,7 @@ public class ClaimService {
         boolean assignedToActor = claim.getAssignedOfficer() != null
                 && claim.getAssignedOfficer().getId().equals(actor.getId());
         if (actor.getRole() != Role.ADMIN && !assignedToActor
-                && !queueMemberships.existsByOfficerIdAndQueueId(actor.getId(), claim.getQueue().getId())) {
+                && !queueMemberships.existsActiveMembership(actor.getId(), claim.getQueue().getId())) {
             throw new org.springframework.security.access.AccessDeniedException("Officer is not a member of this claims queue");
         }
         Long previousOfficerId = claim.getAssignedOfficer() == null ? null : claim.getAssignedOfficer().getId();
@@ -371,7 +382,7 @@ public class ClaimService {
         if (target.getId().equals(previousId)) {
             throw new BusinessRuleException("Claim is already assigned to this officer");
         }
-        if (!queueMemberships.existsByOfficerIdAndQueueId(target.getId(), claim.getQueue().getId())) {
+        if (!queueMemberships.existsActiveMembership(target.getId(), claim.getQueue().getId())) {
             throw new BusinessRuleException("Reassignment target is not a member of this claim's queue");
         }
         claim.setAssignedOfficer(target);
@@ -442,12 +453,14 @@ public class ClaimService {
             return;
         }
         if (actor.getRole() == Role.CLAIMS_OFFICER && claim.getAssignedOfficer() != null
-                && claim.getAssignedOfficer().getId().equals(actor.getId())) {
+                && claim.getAssignedOfficer().getId().equals(actor.getId())
+                && queueMemberships.existsActiveMembership(actor.getId(), claim.getQueue().getId())) {
             return;
         }
         if (actor.getRole() == Role.CLAIMS_OFFICER && claim.getAssignedOfficer() == null
-                && claim.getStatus() == ClaimStatus.SUBMITTED
-                && queueMemberships.existsByOfficerIdAndQueueId(actor.getId(), claim.getQueue().getId())) {
+                && List.of(ClaimStatus.SUBMITTED, ClaimStatus.UNDER_REVIEW, ClaimStatus.INFO_REQUESTED,
+                        ClaimStatus.APPROVED).contains(claim.getStatus())
+                && queueMemberships.existsActiveMembership(actor.getId(), claim.getQueue().getId())) {
             return;
         }
         throw new org.springframework.security.access.AccessDeniedException("You cannot access this claim");

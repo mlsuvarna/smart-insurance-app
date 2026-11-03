@@ -59,8 +59,12 @@ public class ClaimController {
                                      @RequestParam(defaultValue = "20") int size,
                                      @RequestParam(required = false) String status,
                                      @RequestParam(required = false) Boolean overdue,
-                                     @RequestParam(required = false) String queueCode) {
-        return claims.listOfficer(user, status, overdue, queueCode, PageRequests.of(page, size));
+                                     @RequestParam(required = false) String queueCode,
+                                     @RequestParam(defaultValue = "false") boolean assignedOnly,
+                                     @RequestParam(defaultValue = "false") boolean openOnly,
+                                     @RequestParam(defaultValue = "false") boolean needsAttention) {
+        return claims.listOfficer(user, status, overdue, queueCode, assignedOnly, openOnly, needsAttention,
+                PageRequests.of(page, size));
     }
     @GetMapping("/officers")
     @PreAuthorize("hasAnyRole('CLAIMS_OFFICER','ADMIN')")
@@ -72,7 +76,7 @@ public class ClaimController {
                 .filter(ClaimQueue::isActive)
                 .orElseThrow(() -> new ResourceNotFoundException("Active claims queue not found"));
         if (user.getRole() == Role.CLAIMS_OFFICER
-                && !queueMemberships.existsByOfficerIdAndQueueId(user.getId(), queue.getId())) {
+                && !queueMemberships.existsActiveMembership(user.getId(), queue.getId())) {
             throw new org.springframework.security.access.AccessDeniedException("Officer is not a member of this claims queue");
         }
         return queueMemberships.findActiveMembers(queue.getCode(), Role.CLAIMS_OFFICER,

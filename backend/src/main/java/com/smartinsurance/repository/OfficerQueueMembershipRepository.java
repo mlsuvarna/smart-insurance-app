@@ -12,6 +12,16 @@ import com.smartinsurance.enums.Role;
 
 public interface OfficerQueueMembershipRepository extends JpaRepository<OfficerQueueMembership, Long> {
     boolean existsByOfficerIdAndQueueId(Long officerId, Long queueId);
+    @Query(value = """
+            SELECT EXISTS (
+                SELECT 1 FROM officer_queue_memberships m
+                JOIN users u ON u.id = m.officer_id
+                JOIN claim_queues q ON q.id = m.queue_id
+                WHERE m.officer_id = :officerId AND m.queue_id = :queueId
+                  AND u.role = 'CLAIMS_OFFICER' AND u.active = TRUE AND q.active = TRUE
+            )
+            """, nativeQuery = true)
+    boolean existsActiveMembership(@Param("officerId") Long officerId, @Param("queueId") Long queueId);
     Optional<OfficerQueueMembership> findByOfficerIdAndQueueId(Long officerId, Long queueId);
     @EntityGraph(attributePaths = {"officer", "assignedBy", "queue"})
     @Query("select m from OfficerQueueMembership m where m.queue.code = :code "

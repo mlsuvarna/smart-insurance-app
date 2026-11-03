@@ -5,18 +5,46 @@ import { useAuth } from '../context/AuthContext';
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const isClaimsOfficer = user?.role === 'CLAIMS_OFFICER';
   const [claims, setClaims] = useState([]);
   const [policies, setPolicies] = useState([]);
+  const [officerCounts, setOfficerCounts] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    const isCustomer = user?.role === 'CUSTOMER';
-    Promise.all([
-      client.get(isCustomer ? '/claims' : user?.role === 'AGENT' ? '/agent/claims' : '/claims/queue'),
-      isCustomer ? client.get('/policies', { params: { size: 5 } }) : Promise.resolve({ data: { content: [] } }),
-    ]).then(([claimResult, policyResult]) => {
-      setClaims(claimResult.data.content || []);
-      setPolicies(policyResult.data.content || []);
-    }).catch((failure) => setError(failure.response?.data?.message || 'Could not load dashboard data.'));
+    let active = true;
+    async function load() {
+      try {
+        if (user?.role === 'CLAIMS_OFFICER') {
+          const [queuePage, assignedPage, openPage, attentionPage] = await Promise.all([
+            client.get('/claims/queue', { params: { page: 0, size: 5 } }),
+            client.get('/claims/queue', { params: { page: 0, size: 1, assignedOnly: true } }),
+            client.get('/claims/queue', { params: { page: 0, size: 1, openOnly: true } }),
+            client.get('/claims/queue', { params: { page: 0, size: 1, needsAttention: true } }),
+          ]);
+          if (!active) return;
+          setClaims(queuePage.data.content || []);
+          setOfficerCounts({
+            assigned: assignedPage.data.totalElements || 0,
+            open: openPage.data.totalElements || 0,
+            attention: attentionPage.data.totalElements || 0,
+          });
+          return;
+        }
+        const isCustomer = user?.role === 'CUSTOMER';
+        const [claimResult, policyResult] = await Promise.all([
+          client.get(isCustomer ? '/claims' : user?.role === 'AGENT' ? '/agent/claims' : '/claims/queue'),
+          isCustomer ? client.get('/policies', { params: { size: 5 } }) : Promise.resolve({ data: { content: [] } }),
+        ]);
+        if (!active) return;
+        setClaims(claimResult.data.content || []);
+        setPolicies(policyResult.data.content || []);
+        setOfficerCounts(null);
+      } catch (failure) {
+        if (active) setError(failure.response?.data?.message || 'Could not load dashboard data.');
+      }
+    }
+    load();
+    return () => { active = false; };
   }, [user]);
 
   return (
@@ -27,20 +55,20 @@ export default function DashboardPage() {
       </section>
       {error && <p className="error" role="alert">{error}</p>}
       <section className="stat-grid" aria-label="Account summary">
-        <Stat label={user?.role === 'CUSTOMER' ? 'Active policies' : 'Assigned claims'} value={user?.role === 'CUSTOMER' ? policies.filter((p) => p.status === 'ACTIVE').length : claims.length} icon="◇" />
-        <Stat label="Open claims" value={claims.filter((c) => !['SETTLED', 'REJECTED', 'WITHDRAWN'].includes(c.status)).length} icon="◷" />
-        <Stat label="Needs attention" value={claims.filter((c) => c.status === 'INFO_REQUESTED' || c.overdue).length} icon="!" />
+        <Stat label={user?.role === 'CUSTOMER' ? 'Active policies' : 'Assigned claims'} value={user?.role === 'CUSTOMER' ? policies.filter((p) => p.status === 'ACTIVE').length : isClaimsOfficer ? officerCounts?.assigned ?? claims.length : claims.length} icon="◇" />
+        <Stat label="Open claims" value={isClaimsOfficer ? officerCounts?.open ?? claims.filter((c) => !['SETTLED', 'REJECTED', 'WITHDRAWN'].includes(c.status)).length : claims.filter((c) => !['SETTLED', 'REJECTED', 'WITHDRAWN'].includes(c.status)).length} icon="◷" />
+        <Stat label="Needs attention" value={isClaimsOfficer ? officerCounts?.attention ?? claims.filter((c) => c.status === 'INFO_REQUESTED' || c.overdue).length : claims.filter((c) => c.status === 'INFO_REQUESTED' || c.overdue).length} icon="!" />
       </section>
       <section className="panel">
         <div className="section-heading"><div><span className="eyebrow">LATEST ACTIVITY</span><h2>{user?.role === 'CUSTOMER' ? 'Recent claims' : 'Your claim queue'}</h2></div><Link to="/claims">View all <span aria-hidden="true">→</span></Link></div>
-        {claims.length === 0 ? <Empty title="No claims yet" detail={user?.role === 'CUSTOMER' ? 'When you submit a claim, it will appear here.' : 'There are no claims assigned to your queue.'} /> : <ClaimTable claims={claims.slice(0, 5)} />}
+        {claims.length === 0 ? <Empty title="No claims yet" detail={user?.role === 'CUSTOMER' ? 'When you submit a claim, it will appear here.' : 'There are no claims in the queues you belong to.'} /> : <ClaimTable claims={claims.slice(0, 5)} />}
       </section>
     </>
   );
 }
 
-export function ClaimTable({ claims }) {
-  return <div className="table-wrap"><table><thead><tr><th>Claim</th><th>Type</th><th>Submitted</th><th>Status</th><th /></tr></thead><tbody>{claims.map((claim) => <tr key={claim.id}><td><strong>{claim.claimNumber}</strong></td><td>{claim.claimType}</td><td>{new Date(claim.createdAt).toLocaleDateString()}</td><td><Status status={claim.status} /></td><td><Link to={`/claims/${claim.id}`}>Open</Link></td></tr>)}</tbody></table></div>;
+export function ClaimTable({ claims, onStartReview }) {
+  return <div className="table-wrap"><table><thead><tr><th>Claim</th><th>Type</th><th>Submitted</th><th>Status</th><th /></tr></thead><tbody>{claims.map((claim) => <tr key={claim.id}><td><strong>{claim.claimNumber}</strong></td><td>{claim.claimType}</td><td>{new Date(claim.createdAt).toLocaleDateString()}</td><td><Status status={claim.status} /></td><td><Link to={`/claims/${claim.id}`}>Open</Link>{onStartReview && claim.status === 'SUBMITTED' && <button className="text-button" onClick={() => onStartReview(claim)}>{claim.assignedOfficerId == null ? 'Take & start review' : 'Start review'}</button>}</td></tr>)}</tbody></table></div>;
 }
 
 export function Status({ status }) { return <span className={`status status-${status?.toLowerCase()}`}>{status?.replaceAll('_', ' ')}</span>; }
