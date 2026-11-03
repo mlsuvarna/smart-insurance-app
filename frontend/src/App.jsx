@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Component } from 'react';
+import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './layouts/AppLayout';
 import AuthPage from './pages/AuthPage';
@@ -17,8 +18,32 @@ import AdminPaymentsPage from './pages/AdminPaymentsPage';
 
 function NotFound({ title = 'Page not found' }) { return <section className="panel"><span className="eyebrow">SMART CLAIM</span><h1>{title}</h1><p className="muted">This page is not available for your account.</p><a href="/">Return to dashboard</a></section>; }
 
+class RouteErrorBoundary extends Component {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Uncaught route render error:', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <section className="panel" role="alert">
+        <h1>Something went wrong</h1>
+        <p className="muted">This page could not be displayed. Return to your dashboard to continue.</p>
+        <Link to="/">Back to dashboard</Link>
+      </section>;
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
-  return <Routes>
+  const location = useLocation();
+  return <RouteErrorBoundary key={location.pathname}><Routes>
     <Route path="/login" element={<AuthPage mode="login" />} />
     <Route path="/register" element={<AuthPage mode="register" />} />
     <Route element={<ProtectedRoute />}><Route element={<AppLayout />}>
@@ -44,5 +69,5 @@ export default function App() {
       <Route path="unauthorized" element={<NotFound title="Access not permitted" />} />
     </Route></Route>
     <Route path="*" element={<NotFound />} />
-  </Routes>;
+  </Routes></RouteErrorBoundary>;
 }
