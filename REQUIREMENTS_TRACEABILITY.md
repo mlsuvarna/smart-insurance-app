@@ -36,6 +36,8 @@ This is a source-level assessment, not a deployment or runtime certification. â€
 
 ## Local verification status
 
+The latest payment fixes add an admin-only DTO-backed payment list, JSON security/error responses with correlation IDs, current-period payment guards, pending-policy purchase deduplication, and policy-state-gated pay/renew/cancel actions. `GET /api/v1/admin/payments` is covered by a MySQL-backed MockMvc test; execution remains subject to the VM prerequisites below.
+
 No dependencies, tools, or software were installed or downloaded in this pass. No Maven, Vitest, Vite, MySQL, Docker, Terraform, AWS, browser, or production scanner/email commands were run. The earlier local environment had already established that Maven artifacts and frontend dependencies were unavailable. All new test execution, JaCoCo measurement, MySQL migrations/native queries and runtime behavior remain **REQUIRES VM VERIFICATION**.
 
 ## Readiness

@@ -2,6 +2,12 @@ package com.smartinsurance.security;
 
 import java.util.Arrays;
 import java.util.List;
+import java.time.Instant;
+import java.util.Map;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartinsurance.security.CorrelationIdFilter;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,11 +37,13 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 @OpenAPIDefinition(security = @SecurityRequirement(name = "jwtAuth"))
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
+    private final ObjectMapper objectMapper;
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String allowedOrigins;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtFilter, ObjectMapper objectMapper) {
         this.jwtFilter = jwtFilter;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -44,9 +52,27 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/actuator/health",
-                                "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                                "/swagger-ui/**", "/v3/api-docs/**", "/error").permitAll()
                         .anyRequest().authenticated())
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((request, response, cause) -> writeSecurityError(request, response,
+                                HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED", cause.getMessage()))
+                        .accessDeniedHandler((request, response, cause) -> writeSecurityError(request, response,
+                                HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN", cause.getMessage())))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class).build();
+    }
+
+    private void writeSecurityError(HttpServletRequest request, HttpServletResponse response,
+                                    int status, String code, String message) throws java.io.IOException {
+        Object correlationId = request.getAttribute(CorrelationIdFilter.ATTRIBUTE);
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        objectMapper.writeValue(response.getOutputStream(), Map.of(
+                "timestamp", Instant.now(), "status", status, "code", code,
+                "message", message == null ? code : message,
+                "path", request.getRequestURI(),
+                "correlationId", correlationId == null ? "unknown" : correlationId.toString()));
     }
 
     @Bean

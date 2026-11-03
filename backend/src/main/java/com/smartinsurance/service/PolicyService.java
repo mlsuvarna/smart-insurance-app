@@ -10,7 +10,9 @@ import com.smartinsurance.exception.BusinessRuleException;
 import com.smartinsurance.exception.ResourceNotFoundException;
 import com.smartinsurance.repository.PolicyRepository;
 import com.smartinsurance.repository.ProductRepository;
+import com.smartinsurance.repository.PaymentRepository;
 import com.smartinsurance.repository.AssignmentRepository;
+import com.smartinsurance.enums.PaymentStatus;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -25,14 +27,21 @@ public class PolicyService {
     private final ProductRepository products;
     private final AssignmentRepository assignments;
     private final AuditLogService audit;
-    public PolicyService(PolicyRepository policies, ProductRepository products, AssignmentRepository assignments, AuditLogService audit) {
+    private final PaymentRepository payments;
+    public PolicyService(PolicyRepository policies, ProductRepository products, AssignmentRepository assignments,
+                         AuditLogService audit, PaymentRepository payments) {
         this.policies = policies; this.products = products; this.assignments = assignments; this.audit = audit;
+        this.payments = payments;
     }
     @Transactional
     public PolicyResponse purchase(AppUser customer, PurchaseRequest request) {
-        InsuranceProduct product = products.findById(request.productId())
+        InsuranceProduct product = products.findByIdForPurchase(request.productId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         if (!product.isActive()) throw new BusinessRuleException("Product is not available for purchase");
+        if (policies.existsByCustomerIdAndProductIdAndStatus(customer.getId(), product.getId(),
+                PolicyStatus.PENDING_PAYMENT)) {
+            throw new BusinessRuleException("A pending policy for this product already exists");
+        }
         LocalDate start = LocalDate.now(java.time.ZoneOffset.UTC);
         Policy policy = policies.save(new Policy("POL-" + UUID.randomUUID().toString().substring(0, 12).toUpperCase(),
                 customer, product, start, start.plusYears(1)));
@@ -76,7 +85,9 @@ public class PolicyService {
     @Transactional
     public PolicyResponse cancel(AppUser actor, Long id) {
         Policy policy = owned(actor, id);
-        if (policy.getStatus() != PolicyStatus.ACTIVE) throw new BusinessRuleException("Only active policies can be cancelled");
+        if (policy.getStatus() != PolicyStatus.ACTIVE && policy.getStatus() != PolicyStatus.PENDING_PAYMENT) {
+            throw new BusinessRuleException("Only active or pending-payment policies can be cancelled");
+        }
         policy.setStatus(PolicyStatus.CANCELLED);
         audit.record(actor, "POLICY_CANCELLED", "POLICY", policy.getPolicyNumber());
         return toResponse(policy);
@@ -93,7 +104,8 @@ public class PolicyService {
         expireIfPast(p);
         return new PolicyResponse(p.getId(), p.getPolicyNumber(), p.getProduct().getId(), p.getProduct().getName(),
                 p.getCoverageAmount(), p.getPremiumAmount(), p.getStartDate(), p.getEndDate(), p.getStatus(),
-                p.getCreatedAt(), p.getUpdatedAt());
+                p.getCreatedAt(), p.getUpdatedAt(),
+                payments.existsByPolicyIdAndStatus(p.getId(), PaymentStatus.PENDING));
     }
     private void expireIfPast(Policy policy) {
         if (policy.getStatus() == PolicyStatus.ACTIVE

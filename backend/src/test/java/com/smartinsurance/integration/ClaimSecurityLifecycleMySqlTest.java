@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import com.smartinsurance.dto.ClaimDtos.ActionRequest;
 import com.smartinsurance.dto.ClaimDtos.SubmitRequest;
@@ -15,6 +16,7 @@ import com.smartinsurance.entity.ClaimQueue;
 import com.smartinsurance.entity.ClaimType;
 import com.smartinsurance.entity.InsuranceProduct;
 import com.smartinsurance.entity.OfficerQueueMembership;
+import com.smartinsurance.entity.Payment;
 import com.smartinsurance.entity.Policy;
 import com.smartinsurance.enums.ClaimStatus;
 import com.smartinsurance.enums.DocumentScanStatus;
@@ -26,6 +28,7 @@ import com.smartinsurance.repository.ClaimQueueRepository;
 import com.smartinsurance.repository.ClaimRepository;
 import com.smartinsurance.repository.ClaimTypeRepository;
 import com.smartinsurance.repository.OfficerQueueMembershipRepository;
+import com.smartinsurance.repository.PaymentRepository;
 import com.smartinsurance.repository.PolicyRepository;
 import com.smartinsurance.repository.ProductRepository;
 import com.smartinsurance.repository.UserRepository;
@@ -75,6 +78,7 @@ class ClaimSecurityLifecycleMySqlTest {
     @Autowired UserRepository users;
     @Autowired ProductRepository products;
     @Autowired PolicyRepository policies;
+    @Autowired PaymentRepository paymentRepository;
     @Autowired ClaimTypeRepository claimTypes;
     @Autowired ClaimQueueRepository queues;
     @Autowired OfficerQueueMembershipRepository memberships;
@@ -170,6 +174,23 @@ class ClaimSecurityLifecycleMySqlTest {
         mvc.perform(get("/api/v1/admin/reports/summary")
                         .param("from", LocalDate.now().minusDays(7).toString())
                         .param("to", LocalDate.now().toString())
+                        .header("Authorization", "Bearer " + jwt.createToken(fixture.customer())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @Transactional
+    void adminCanListPaymentsWhileCustomerIsForbidden() throws Exception {
+        Fixture fixture = fixture();
+        Payment payment = paymentRepository.saveAndFlush(new Payment("PAY-LIST-" + UUID.randomUUID(),
+                fixture.policy()));
+
+        mvc.perform(get("/api/v1/admin/payments").param("page", "0").param("size", "20")
+                        .header("Authorization", "Bearer " + jwt.createToken(fixture.admin())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].reference").value(payment.getPaymentReference()))
+                .andExpect(jsonPath("$.content[0].customerName").value(fixture.customer().getFullName()));
+        mvc.perform(get("/api/v1/admin/payments")
                         .header("Authorization", "Bearer " + jwt.createToken(fixture.customer())))
                 .andExpect(status().isForbidden());
     }

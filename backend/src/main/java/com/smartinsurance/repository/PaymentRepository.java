@@ -11,6 +11,8 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import com.smartinsurance.enums.PaymentStatus;
+import java.time.Instant;
+import java.util.List;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @EntityGraph(attributePaths = "policy")
@@ -18,7 +20,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @EntityGraph(attributePaths = "policy")
     Optional<Payment> findByPaymentReferenceAndCustomerId(String paymentReference, Long customerId);
     boolean existsByPolicyIdAndStatus(Long policyId, PaymentStatus status);
+    boolean existsByPolicyIdAndStatusAndCreatedAtGreaterThanEqual(Long policyId, PaymentStatus status,
+                                                                  Instant createdAt);
+    @Query("select payment.policy.id from Payment payment where payment.customer.id = :customerId "
+            + "and payment.status = :status")
+    List<Long> findPolicyIdsByCustomerIdAndStatus(@Param("customerId") Long customerId,
+                                                  @Param("status") PaymentStatus status);
+    @EntityGraph(attributePaths = {"policy", "policy.customer", "customer"})
     Optional<Payment> findByPaymentReference(String paymentReference);
+    @EntityGraph(attributePaths = {"policy", "policy.customer", "customer"})
     Page<Payment> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"policy", "customer"})

@@ -16,12 +16,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {
     private static final String HEADER = "X-Correlation-Id";
+    public static final String ATTRIBUTE = CorrelationIdFilter.class.getName() + ".correlationId";
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String supplied = request.getHeader(HEADER);
         String correlationId = supplied != null && supplied.matches("[A-Za-z0-9._-]{1,80}")
                 ? supplied : UUID.randomUUID().toString();
+        request.setAttribute(ATTRIBUTE, correlationId);
         MDC.put("correlationId", correlationId);
         response.setHeader(HEADER, correlationId);
         try {

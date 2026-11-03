@@ -4,6 +4,7 @@
 
 - JUnit 5/Mockito source covers registration/login/password change and JWT invalidation, customer KYC/PII masking, product/policy/payment rules, payment detail/history ownership, claim transitions/reasoned rejection/submit-only withdrawal/INFO_REQUESTED response, SLA pause/resume, queue membership and routing constraints, notifications, report metrics/date filters, valid document upload and CLEAN-only download.
 - Testcontainers MySQL source exercises Flyway migrations and MySQL schema, authenticated product API and public OpenAPI access, admin-only functionality/reports, customer ownership and agent isolation, officer queue restrictions, the full claim lifecycle including initial and response document uploads, timestamped actor/reason history and database-enforced history immutability.
+- Payment coverage includes a MySQL-backed MockMvc check that ADMIN can retrieve payment content while CUSTOMER receives 403, plus a service test that SUCCESS activates the policy and records history, audit, and customer notification.
 - JaCoCo writes `backend/target/site/jacoco/index.html` and enforces at least 70% line coverage for `com.smartinsurance.service` during `mvn verify`.
 - **Coverage has not been measured.** Test compilation/execution, actual JaCoCo percentage, MySQL migrations/native queries, Testcontainers availability and the threshold result are **REQUIRES VM VERIFICATION**.
 - Frontend tests include Vitest/Testing Library checks, but browser workflows and complete role/API acceptance remain VM verification.
@@ -14,6 +15,7 @@ Run these only in the VM with Java 21, Maven, Node.js/npm, MySQL-compatible Test
 
 ```powershell
 Set-Location .\backend
+mvn -Dtest=CoreWorkflowServiceTest,ClaimSecurityLifecycleMySqlTest test
 mvn clean test
 mvn verify
 Set-Location ..\frontend

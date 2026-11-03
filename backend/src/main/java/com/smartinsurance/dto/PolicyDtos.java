@@ -12,5 +12,5 @@ public final class PolicyDtos {
     public record PolicyResponse(Long id, String policyNumber, Long productId, String productName,
                                  BigDecimal coverageAmount, BigDecimal premiumAmount,
                                  LocalDate startDate, LocalDate endDate, PolicyStatus status,
-                                 Instant createdAt, Instant updatedAt) { }
+                                 Instant createdAt, Instant updatedAt, boolean hasPendingPayment) { }
 }

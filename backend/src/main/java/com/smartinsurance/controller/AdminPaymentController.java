@@ -1,12 +1,10 @@
 package com.smartinsurance.controller;
 
 import com.smartinsurance.entity.AppUser;
-import com.smartinsurance.entity.Payment;
+import com.smartinsurance.dto.PaymentDtos.AdminPaymentResponse;
 import com.smartinsurance.enums.PaymentStatus;
 import com.smartinsurance.service.PaymentService;
 import com.smartinsurance.util.PageRequests;
-import java.math.BigDecimal;
-import java.time.Instant;
 import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,29 +26,21 @@ public class AdminPaymentController {
     }
 
     @GetMapping
-    public Page<PaymentResponse> all(@RequestParam(defaultValue = "0") int page,
-                                     @RequestParam(defaultValue = "20") int size) {
-        return payments.all(PageRequests.of(page, size)).map(this::toResponse);
+    public Page<AdminPaymentResponse> all(@RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
+        return payments.all(PageRequests.of(page, size));
     }
 
     @PostMapping("/{reference}/mock-processing")
-    public PaymentResponse mockProcess(@AuthenticationPrincipal AppUser admin, @PathVariable String reference,
-                                       @RequestParam PaymentStatus outcome) {
-        return toResponse(payments.mockProcess(admin, reference, outcome));
+    public AdminPaymentResponse mockProcess(@AuthenticationPrincipal AppUser admin, @PathVariable String reference,
+                                            @RequestParam PaymentStatus outcome) {
+        payments.mockProcess(admin, reference, outcome);
+        return payments.getAdmin(reference);
     }
 
     @PostMapping("/{reference}/refund")
-    public PaymentResponse refund(@AuthenticationPrincipal AppUser admin, @PathVariable String reference) {
-        return toResponse(payments.refund(admin, reference));
+    public AdminPaymentResponse refund(@AuthenticationPrincipal AppUser admin, @PathVariable String reference) {
+        payments.refund(admin, reference);
+        return payments.getAdmin(reference);
     }
-
-    private PaymentResponse toResponse(Payment payment) {
-        return new PaymentResponse(payment.getPaymentReference(), payment.getPolicy().getPolicyNumber(),
-                payment.getAmount(), payment.getStatus().name(), payment.getCreatedAt(), payment.getUpdatedAt(),
-                payment.getProcessedAt(), payment.getRefundedAt(), "MOCK - NOT A REAL PAYMENT");
-    }
-
-    public record PaymentResponse(String reference, String policyNumber, BigDecimal amount, String status,
-                                  Instant createdAt, Instant updatedAt, Instant processedAt, Instant refundedAt,
-                                  String processingMode) { }
 }

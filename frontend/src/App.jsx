@@ -28,7 +28,7 @@ export default function App() {
       <Route path="claims/new" element={<ProtectedRoute roles={['CUSTOMER']} />}><Route index element={<NewClaimPage />} /></Route>
       <Route path="claims/:id" element={<ClaimDetailPage />} />
       <Route path="agent" element={<ProtectedRoute roles={['AGENT']} />}><Route index element={<AgentWorkspacePage />} /></Route>
-      <Route path="payments" element={<ProtectedRoute roles={['CUSTOMER']} />}><Route index element={<PoliciesPage />} /></Route>
+      <Route path="payments" element={<ProtectedRoute roles={['CUSTOMER']} />}><Route index element={<PoliciesPage pageTitle="Payments" />} /></Route>
       <Route path="notifications" element={<NotificationsPage />} />
       <Route path="profile" element={<ProtectedRoute roles={['CUSTOMER']} />}><Route index element={<ProfilePage />} /></Route>
       <Route path="admin/users" element={<ProtectedRoute roles={['ADMIN']} />}><Route index element={<AdminUsersPage />} /></Route>

@@ -94,9 +94,9 @@ class CoreWorkflowServiceTest {
         ProductRepository products = mock(ProductRepository.class);
         InsuranceProduct product = product();
         product.setActive(false);
-        when(products.findById(4L)).thenReturn(Optional.of(product));
+        when(products.findByIdForPurchase(4L)).thenReturn(Optional.of(product));
         PolicyService service = new PolicyService(mock(PolicyRepository.class), products,
-                mock(AssignmentRepository.class), mock(AuditLogService.class));
+                mock(AssignmentRepository.class), mock(AuditLogService.class), mock(PaymentRepository.class));
 
         assertThrows(BusinessRuleException.class,
                 () -> service.purchase(user(2L, Role.CUSTOMER), new PurchaseRequest(4L)));
@@ -105,16 +105,33 @@ class CoreWorkflowServiceTest {
     @Test
     void policyPurchaseCreatesPendingPaymentPolicy() {
         ProductRepository products = mock(ProductRepository.class);
-        when(products.findById(4L)).thenReturn(Optional.of(product()));
+        when(products.findByIdForPurchase(4L)).thenReturn(Optional.of(product()));
         PolicyRepository policies = mock(PolicyRepository.class);
         when(policies.save(any(Policy.class))).thenAnswer(call -> call.getArgument(0));
         PolicyService service = new PolicyService(policies, products, mock(AssignmentRepository.class),
-                mock(AuditLogService.class));
+                mock(AuditLogService.class), mock(PaymentRepository.class));
 
         var response = service.purchase(user(2L, Role.CUSTOMER), new PurchaseRequest(4L));
 
         assertEquals(PolicyStatus.PENDING_PAYMENT, response.status());
         verify(policies).save(any(Policy.class));
+    }
+
+    @Test
+    void policyPurchaseRejectsExistingPendingPolicyForTheSameProduct() {
+        ProductRepository products = mock(ProductRepository.class);
+        InsuranceProduct product = product();
+        ReflectionTestUtils.setField(product, "id", 4L);
+        when(products.findByIdForPurchase(4L)).thenReturn(Optional.of(product));
+        PolicyRepository policies = mock(PolicyRepository.class);
+        when(policies.existsByCustomerIdAndProductIdAndStatus(2L, 4L, PolicyStatus.PENDING_PAYMENT))
+                .thenReturn(true);
+        PolicyService service = new PolicyService(policies, products, mock(AssignmentRepository.class),
+                mock(AuditLogService.class), mock(PaymentRepository.class));
+
+        assertThrows(BusinessRuleException.class,
+                () -> service.purchase(user(2L, Role.CUSTOMER), new PurchaseRequest(4L)));
+        verify(policies, never()).save(any(Policy.class));
     }
 
     @Test
@@ -125,7 +142,7 @@ class CoreWorkflowServiceTest {
                 user(5L, Role.CUSTOMER), product(), LocalDate.now(), LocalDate.now().plusYears(1))));
         when(assignments.existsByAgentIdAndCustomerId(9L, 5L)).thenReturn(false);
         PolicyService service = new PolicyService(policies, mock(ProductRepository.class), assignments,
-                mock(AuditLogService.class));
+                mock(AuditLogService.class), mock(PaymentRepository.class));
 
         assertThrows(AccessDeniedException.class,
                 () -> service.assignedCustomerPolicies(user(9L, Role.AGENT), 5L,
@@ -148,7 +165,7 @@ class CoreWorkflowServiceTest {
     @Test
     void customersCannotMockProcessPayment() {
         PaymentService service = new PaymentService(mock(PaymentRepository.class), mock(PolicyRepository.class),
-                mock(AuditLogService.class), mock(PaymentStatusHistoryRepository.class));
+                mock(AuditLogService.class), mock(PaymentStatusHistoryRepository.class), mock(NotificationService.class));
 
         assertThrows(AccessDeniedException.class,
                 () -> service.mockProcess(user(3L, Role.CUSTOMER), "PAY-3", PaymentStatus.SUCCESS));
@@ -160,16 +177,33 @@ class CoreWorkflowServiceTest {
         PolicyRepository policies = mock(PolicyRepository.class);
         AppUser customer = user(7L, Role.CUSTOMER);
         Policy policy = new Policy("P-2", customer, product(), LocalDate.now(), LocalDate.now().plusYears(1));
-        when(policies.findById(8L)).thenReturn(Optional.of(policy));
-        when(payments.existsByPolicyIdAndStatus(8L, PaymentStatus.PENDING)).thenReturn(false);
+        when(policies.findByIdForPayment(8L)).thenReturn(Optional.of(policy));
         when(payments.save(any(Payment.class))).thenAnswer(call -> call.getArgument(0));
         PaymentStatusHistoryRepository history = mock(PaymentStatusHistoryRepository.class);
-        PaymentService service = new PaymentService(payments, policies, mock(AuditLogService.class), history);
+        PaymentService service = new PaymentService(payments, policies, mock(AuditLogService.class), history,
+                mock(NotificationService.class));
 
         Payment payment = service.record(customer, 8L);
 
         assertEquals(PaymentStatus.PENDING, payment.getStatus());
         verify(history).save(any());
+    }
+
+    @Test
+    void customerCannotRecordAnotherPaymentForCurrentPolicyPeriod() {
+        PaymentRepository payments = mock(PaymentRepository.class);
+        PolicyRepository policies = mock(PolicyRepository.class);
+        AppUser customer = user(7L, Role.CUSTOMER);
+        Policy policy = new Policy("P-2", customer, product(), LocalDate.now(), LocalDate.now().plusYears(1));
+        when(policies.findByIdForPayment(8L)).thenReturn(Optional.of(policy));
+        when(payments.existsByPolicyIdAndStatusAndCreatedAtGreaterThanEqual(
+                8L, PaymentStatus.PENDING, policy.getStartDate().atStartOfDay(java.time.ZoneOffset.UTC).toInstant()))
+                .thenReturn(true);
+        PaymentService service = new PaymentService(payments, policies, mock(AuditLogService.class),
+                mock(PaymentStatusHistoryRepository.class), mock(NotificationService.class));
+
+        assertThrows(BusinessRuleException.class, () -> service.record(customer, 8L));
+        verify(payments, never()).save(any(Payment.class));
     }
 
     @Test
@@ -186,7 +220,7 @@ class CoreWorkflowServiceTest {
         when(payments.findByPaymentReference("PAY-OWN")).thenReturn(Optional.of(payment));
         when(history.findByPaymentIdOrderByCreatedAtAsc(9L)).thenReturn(List.of());
         PaymentService service = new PaymentService(payments, mock(PolicyRepository.class),
-                mock(AuditLogService.class), history);
+                mock(AuditLogService.class), history, mock(NotificationService.class));
 
         assertEquals("PAY-OWN", service.get(customer, "PAY-OWN").getPaymentReference());
         assertEquals(0, service.history(customer, "PAY-OWN").size());
@@ -204,14 +238,21 @@ class CoreWorkflowServiceTest {
         Payment payment = new Payment("PAY-2", policy);
         when(payments.findByReferenceForUpdate("PAY-2")).thenReturn(Optional.of(payment));
         PaymentStatusHistoryRepository history = mock(PaymentStatusHistoryRepository.class);
+        AuditLogService audit = mock(AuditLogService.class);
+        NotificationService notifications = mock(NotificationService.class);
+        AppUser admin = user(1L, Role.ADMIN);
         PaymentService service = new PaymentService(payments, mock(PolicyRepository.class),
-                mock(AuditLogService.class), history);
+                audit, history, notifications);
 
-        service.mockProcess(user(1L, Role.ADMIN), "PAY-2", PaymentStatus.SUCCESS);
+        service.mockProcess(admin, "PAY-2", PaymentStatus.SUCCESS);
 
         assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
         assertEquals(PolicyStatus.ACTIVE, policy.getStatus());
         verify(history).save(any());
+        verify(audit).record(admin, "POLICY_ACTIVATED_BY_PAYMENT", "POLICY",
+                policy.getPolicyNumber());
+        verify(notifications).paymentEvent(customer, "PREMIUM_PAYMENT_SUCCESS",
+                "Premium payment for policy " + policy.getPolicyNumber() + " was recorded successfully.");
     }
 
     @Test

@@ -26,6 +26,14 @@ public class NotificationService {
     @Transactional
     public void notifyUser(AppUser recipient, Claim claim, String event, String message) {
         notifications.save(new Notification(recipient, claim, event, message));
+        notifyEmailAfterCommit(recipient, event);
+    }
+    @Transactional
+    public void paymentEvent(AppUser recipient, String event, String message) {
+        notifications.save(new Notification(recipient, null, event, message));
+        notifyEmailAfterCommit(recipient, event);
+    }
+    private void notifyEmailAfterCommit(AppUser recipient, String event) {
         String emailAddress = recipient.getEmail();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
